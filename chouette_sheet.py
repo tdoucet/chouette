@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Chouette score sheet generator (ReportLab).  Run:  python chouette_sheet.py
+Chouette score sheet generator (ReportLab).
+
+    python chouette_sheet.py                  # the standard sheet -> chouette_sheet.pdf
+    python chouette_sheet.py large            # a named size from PRESETS
+    python chouette_sheet.py --players 7 --rows 14
+    python chouette_sheet.py large --sheet-only   # page 1 only, no instructions
+
 Page 1 = blank sheet.  Page 2 = instructions + worked example.
 
 Line weights and the single grey tint are set in the CONFIG block.
@@ -10,18 +16,28 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import Paragraph, Frame, Spacer, Flowable
 from reportlab.lib import colors
+import argparse
+import os
 
 # ----------------------------- CONFIG ---------------------------------
 OUTFILE         = "chouette_sheet.pdf"
 PAGESIZE        = letter
 MARGIN          = 30
 TITLE           = "Chouette Score Sheet"
-NUM_PLAYERS     = 10
-NUM_ROWS        = 20             # total rows, including the opening-totals row
-ROW_H           = 32
-HDR_H           = 30
-NOTES_W         = 62
 CHK_W           = 24
+
+# Sheet sizes.  Choose by name on the command line, or override with --players / --rows.
+#   players  = columns for players        rows = total rows, including the opening-totals row
+#   notes_w  = width of the Notes column (the player columns share what remains)
+# Row height is NOT set here: it is worked out so the rows exactly fill the page, which
+# means fewer rows automatically gives bigger boxes.  Column width works the same way.
+PRESETS = {
+    "standard": dict(players=10, rows=20, notes_w=62),
+    "large":    dict(players=8,  rows=16, notes_w=70),
+    "jumbo":    dict(players=6,  rows=12, notes_w=90),
+}
+DEFAULT_PRESET  = "standard"
+HDR_RATIO       = 30 / 32        # name-header height as a fraction of the row height
 OPTIONS         = ["Jacoby waived", "Beavers", "Extras", "Partners"]
 INCLUDE_INSTRUCTIONS = True
 
@@ -50,6 +66,8 @@ EXAMPLE_GAP     = 24             # space above the "Worked example" heading
 EXAMPLE_TEXT_GAP = 10            # space between the example table and its explanation
 EXAMPLE_COL_W   = 56             # width of each player column in the example
 EXAMPLE_NOTES_W = 62
+EXAMPLE_ROW_H   = 32             # the worked example keeps its own fixed cell size
+EXAMPLE_HDR_H   = 30
 EXAMPLE_SIDE_GAP = 14            # gap between the example table and the rotation shown beside it
 EXAMPLE_SIDE_SIZE = 8            # type size of the rotation shown beside the example
 # ----------------------------------------------------------------------
@@ -87,31 +105,31 @@ def checkbox(c, x, y, label, size=9):
     return x + 12 + c.stringWidth(label, REG, size) + 14
 
 
-def draw_table(c, x0, ytop, ncols, cw, nrows, notes_w, names=None, data=None, fs=9):
+def draw_table(c, x0, ytop, ncols, cw, nrows, row_h, hdr_h, notes_w, names=None, data=None, fs=9):
     """Header + nrows rows.  data = list of dicts {cells:[(delta,total)], chk, note}."""
-    dw, dh = cw * DELTA_W_FRAC, ROW_H * DELTA_H_FRAC
+    dw, dh = cw * DELTA_W_FRAC, row_h * DELTA_H_FRAC
     chk_x = x0 + ncols * cw
     notes_x = chk_x + CHK_W
     xr = notes_x + notes_w
-    y_hdr = ytop - HDR_H
-    y_bot = y_hdr - nrows * ROW_H
+    y_hdr = ytop - hdr_h
+    y_bot = y_hdr - nrows * row_h
 
     # grey areas
     c.setFillColor(grey)
-    c.rect(chk_x, y_bot, CHK_W, nrows * ROW_H, stroke=0, fill=1)
+    c.rect(chk_x, y_bot, CHK_W, nrows * row_h, stroke=0, fill=1)
     for r in range(nrows):
-        yy = y_hdr - (r + 1) * ROW_H
+        yy = y_hdr - (r + 1) * row_h
         for p in range(ncols):
-            c.rect(x0 + p * cw, yy + ROW_H - dh, dw, dh, stroke=0, fill=1)
+            c.rect(x0 + p * cw, yy + row_h - dh, dw, dh, stroke=0, fill=1)
 
     # lines: grey rows and delta boxes, black columns, heavier frame and header rule
     c.setStrokeColor(grid); c.setLineWidth(LINE_THIN)
     for r in range(nrows + 1):
-        c.line(x0, y_hdr - r * ROW_H, xr, y_hdr - r * ROW_H)
+        c.line(x0, y_hdr - r * row_h, xr, y_hdr - r * row_h)
     for r in range(nrows):
-        yy = y_hdr - (r + 1) * ROW_H
+        yy = y_hdr - (r + 1) * row_h
         for p in range(ncols):
-            c.rect(x0 + p * cw, yy + ROW_H - dh, dw, dh)
+            c.rect(x0 + p * cw, yy + row_h - dh, dw, dh)
     c.setStrokeColor(colors.black)
     for x in [x0 + p * cw for p in range(ncols + 1)] + [notes_x, xr]:
         c.line(x, ytop, x, y_bot)
@@ -121,7 +139,7 @@ def draw_table(c, x0, ytop, ncols, cw, nrows, notes_w, names=None, data=None, fs
 
     # header text
     c.setFillColor(colors.black)
-    mid = y_hdr + HDR_H / 2 - 3
+    mid = y_hdr + hdr_h / 2 - 3
     if names:
         c.setFont(BOLD, 9)
         for p, n in enumerate(names):
@@ -131,22 +149,22 @@ def draw_table(c, x0, ytop, ncols, cw, nrows, notes_w, names=None, data=None, fs
 
     # data
     for r, row in enumerate(data or []):
-        yy = y_hdr - (r + 1) * ROW_H
+        yy = y_hdr - (r + 1) * row_h
         for p, (d, t) in enumerate(row['cells']):
             bx = x0 + p * cw
             if d:
                 c.setFont(REG, fs - 1.5)
-                c.drawCentredString(bx + dw / 2, yy + ROW_H - dh / 2 - 2.5, d)
+                c.drawCentredString(bx + dw / 2, yy + row_h - dh / 2 - 2.5, d)
             c.setFont(BOLD, fs + 1)
             c.drawCentredString(bx + cw / 2, yy + 5, t)
         if row.get('chk'):
-            checkmark(c, chk_x + CHK_W / 2, yy + ROW_H / 2, 6)
+            checkmark(c, chk_x + CHK_W / 2, yy + row_h / 2, 6)
         c.setFont(ITAL, 6.8)
         for i, ln in enumerate(row.get('note', "").split("\n")):
-            c.drawString(notes_x + 4, yy + ROW_H / 2 + 4 - i * 8, ln)
+            c.drawString(notes_x + 4, yy + row_h / 2 + 4 - i * 8, ln)
 
 
-def page1(c):
+def page1(c, players, rows, notes_w):
     top = H - MARGIN
     c.setFillColor(colors.black)
     c.setFont(BOLD, TITLE_SIZE); c.drawString(L, top - TITLE_DROP, TITLE)
@@ -159,8 +177,10 @@ def page1(c):
         x = checkbox(c, x, y, lab)
     field(c, x, y, "Other", R - x)
 
-    cw = (R - L - CHK_W - NOTES_W) / NUM_PLAYERS
-    draw_table(c, L, y - TABLE_GAP, NUM_PLAYERS, cw, NUM_ROWS, NOTES_W)
+    cw = (R - L - CHK_W - notes_w) / players
+    y_top = y - TABLE_GAP
+    row_h = (y_top - MARGIN) / (rows + HDR_RATIO)       # rows + header fill the page exactly
+    draw_table(c, L, y_top, players, cw, rows, row_h, row_h * HDR_RATIO, notes_w)
 
 
 class ExampleTable(Flowable):
@@ -171,20 +191,20 @@ class ExampleTable(Flowable):
         self.names, self.data = names, data
         self.side = side or []
         self.width = ncols * cw + CHK_W + notes_w
-        self.height = HDR_H + len(data) * ROW_H
+        self.height = EXAMPLE_HDR_H + len(data) * EXAMPLE_ROW_H
 
     def wrap(self, avail_w, avail_h):
         return self.width, self.height
 
     def draw(self):      # origin is the flowable's lower-left corner
         draw_table(self.canv, 0, self.height, self.ncols, self.cw, len(self.data),
-                   self.notes_w, names=self.names, data=self.data)
+                   EXAMPLE_ROW_H, EXAMPLE_HDR_H, self.notes_w, names=self.names, data=self.data)
         if self.side:        # one line of text beside each row, to the right of the table
             c, x = self.canv, self.width + EXAMPLE_SIDE_GAP
             c.setFillColor(colors.black)
             c.setFont(REG, EXAMPLE_SIDE_SIZE)
             for r, text in enumerate(self.side):     # baseline offset keeps the text centered on the row
-                c.drawString(x, self.height - HDR_H - (r + 0.5) * ROW_H - EXAMPLE_SIDE_SIZE * 0.33, text)
+                c.drawString(x, self.height - EXAMPLE_HDR_H - (r + 0.5) * EXAMPLE_ROW_H - EXAMPLE_SIDE_SIZE * 0.33, text)
 
 
 def page2(c):
@@ -280,13 +300,34 @@ def page2(c):
 
 
 def main():
-    c = canvas.Canvas(OUTFILE, pagesize=PAGESIZE)
+    ap = argparse.ArgumentParser(description="Generate the chouette score sheet.")
+    ap.add_argument("preset", nargs="?", default=DEFAULT_PRESET, choices=sorted(PRESETS),
+                    help="named size (default: %s)" % DEFAULT_PRESET)
+    ap.add_argument("--players", type=int, help="override the number of player columns")
+    ap.add_argument("--rows", type=int, help="override the number of rows")
+    ap.add_argument("--notes", type=int, help="override the Notes column width (points)")
+    ap.add_argument("--sheet-only", action="store_true", help="page 1 only; omit the instructions")
+    ap.add_argument("--out", help="output file name")
+    a = ap.parse_args()
+
+    size = dict(PRESETS[a.preset])
+    for key, val in (("players", a.players), ("rows", a.rows), ("notes_w", a.notes)):
+        if val is not None:
+            size[key] = val
+
+    out = a.out
+    if not out:                          # the standard sheet keeps the plain name
+        stem, ext = os.path.splitext(OUTFILE)
+        standard = size == PRESETS[DEFAULT_PRESET]
+        out = OUTFILE if standard else "%s_%dx%d%s" % (stem, size["players"], size["rows"], ext)
+
+    c = canvas.Canvas(out, pagesize=PAGESIZE)
     c.setTitle(TITLE)
-    page1(c)
-    if INCLUDE_INSTRUCTIONS:
+    page1(c, size["players"], size["rows"], size["notes_w"])
+    if INCLUDE_INSTRUCTIONS and not a.sheet_only:
         c.showPage(); page2(c)
     c.save()
-    print("wrote", OUTFILE)
+    print("wrote", out)
 
 
 if __name__ == "__main__":
