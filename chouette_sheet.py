@@ -38,7 +38,7 @@ PRESETS = {
 }
 DEFAULT_PRESET  = "standard"
 HDR_RATIO       = 30 / 32        # name-header height as a fraction of the row height
-OPTIONS         = ["Jacoby waived", "Beavers", "Extras", "Partners"]
+OPTIONS         = ["Jacoby waived", "Beavers", "Partners", "Extras"]
 INCLUDE_INSTRUCTIONS = True
 
 LINE_THIN       = 0.4            # row lines, column lines, delta-box outlines
