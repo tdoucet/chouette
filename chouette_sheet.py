@@ -8,7 +8,7 @@ Line weights and the single grey tint are set in the CONFIG block.
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Paragraph, Frame
+from reportlab.platypus import Paragraph, Frame, Spacer, Flowable
 from reportlab.lib import colors
 
 # ----------------------------- CONFIG ---------------------------------
@@ -33,6 +33,23 @@ GRID            = 0.35           # grey level of row lines and delta-box outline
 TINT            = 0.95           # every grey area (delta boxes, check column); 1 = white
 DELTA_W_FRAC    = 0.56
 DELTA_H_FRAC    = 0.42
+
+# Page 1 layout (points)
+TITLE_SIZE      = 20
+TITLE_DROP      = 18             # title baseline, below the top margin
+STAKE_W         = 60             # width of the Stake field, label included
+OPTIONS_DROP    = 48             # Options baseline, below the top margin
+OPTIONS_INDENT  = 46             # first checkbox, from the left margin
+TABLE_GAP       = 12             # Options baseline down to the top of the grid
+
+# Page 2 layout (points).  Page 2 is a flowing document: everything between the
+# margins is one list of paragraphs, spacers and the example table, so editing
+# the text just moves what follows.  There are no coordinates to recompute.
+TEXT_RIGHT_INDENT = 50           # keeps the instruction text a little narrower than the page
+EXAMPLE_GAP     = 24             # space above the "Worked example" heading
+EXAMPLE_TEXT_GAP = 10            # space between the example table and its explanation
+EXAMPLE_COL_W   = 56             # width of each player column in the example
+EXAMPLE_NOTES_W = 62
 # ----------------------------------------------------------------------
 
 W, H = PAGESIZE
@@ -130,29 +147,47 @@ def draw_table(c, x0, ytop, ncols, cw, nrows, notes_w, names=None, data=None, fs
 def page1(c):
     top = H - MARGIN
     c.setFillColor(colors.black)
-    c.setFont(BOLD, 20); c.drawString(L, top - 18, TITLE)
-    field(c, R - 60, top - 18, "Stake:", 60)          # right-justified, ends at the margin
+    c.setFont(BOLD, TITLE_SIZE); c.drawString(L, top - TITLE_DROP, TITLE)
+    field(c, R - STAKE_W, top - TITLE_DROP, "Stake:", STAKE_W)    # ends at the right margin
 
-    y = top - 48
+    y = top - OPTIONS_DROP
     c.setFont(BOLD, 9); c.drawString(L, y, "Options:")
-    x = L + 46
+    x = L + OPTIONS_INDENT
     for lab in OPTIONS:
         x = checkbox(c, x, y, lab)
     field(c, x, y, "Other", R - x)
 
     cw = (R - L - CHK_W - NOTES_W) / NUM_PLAYERS
-    draw_table(c, L, y - 12, NUM_PLAYERS, cw, NUM_ROWS, NOTES_W)
+    draw_table(c, L, y - TABLE_GAP, NUM_PLAYERS, cw, NUM_ROWS, NOTES_W)
+
+
+class ExampleTable(Flowable):
+    """The worked-example grid as a flowable: it reports its own height."""
+    def __init__(self, ncols, cw, notes_w, names, data):
+        super().__init__()
+        self.ncols, self.cw, self.notes_w = ncols, cw, notes_w
+        self.names, self.data = names, data
+        self.width = ncols * cw + CHK_W + notes_w
+        self.height = HDR_H + len(data) * ROW_H
+
+    def wrap(self, avail_w, avail_h):
+        return self.width, self.height
+
+    def draw(self):      # origin is the flowable's lower-left corner
+        draw_table(self.canv, 0, self.height, self.ncols, self.cw, len(self.data),
+                   self.notes_w, names=self.names, data=self.data)
 
 
 def page2(c):
-    top = H - MARGIN
-    c.setFillColor(colors.black)
-    c.setFont(BOLD, 16); c.drawString(L, top - 14, "Using the chouette score sheet")
-    body = ParagraphStyle("b", fontName=REG, fontSize=8.8, leading=11.2, spaceAfter=3.5)
+    title = ParagraphStyle("t", fontName=BOLD, fontSize=16, leading=20, spaceAfter=6)
+    body = ParagraphStyle("b", fontName=REG, fontSize=8.8, leading=11.2, spaceAfter=3.5,
+                          rightIndent=TEXT_RIGHT_INDENT)
     head = ParagraphStyle("h", fontName=BOLD, fontSize=9.8, leading=12, spaceBefore=4, spaceAfter=2)
     P = lambda t: Paragraph(t, body)
     Hh = lambda t: Paragraph(t, head)
+
     story = [
+        Paragraph("Using the chouette score sheet", title),
         Hh("Starting"),
         P("Write the per-point stake at the top and tick the options in effect. The Jacoby rule "
           "applies unless waived. Write each player's name at the head of a column, in any order; column order "
@@ -164,7 +199,7 @@ def page2(c):
           "separately according to that individual cube: the cube value finally held, or passed, times 1, 2 or 3 "
           "for a single, gammon or backgammon, as the Jacoby rule allows."),
         P("In each opponent's small box write what that opponent won (+) or lost (&minus;), "
-          "in points. In the Box's small box write the total of what he won (+) or lost (&minus). "
+          "in points. In the Box's small box write the total of what he won (+) or lost (&minus;). "
           "Then, in the large area of each cell, "
           "write the new total: the previous total plus the figure in the small box."),
         P("<b>Check</b>: Add the small-box figures across the row. They must sum to zero. Add the totals in the boxes "
@@ -173,26 +208,17 @@ def page2(c):
         P("A new player entering takes a blank column and starts at 0 on the row where he joins.  Note his entry in the column at the right. "),
         P("A player who steps away temporarily keeps his column and his total.  For all the games he is away, record 0 in the small "
           "box and carry his total down."),
-        P("A player who leaves for good cashes out.  Record the amount he pays (+) or receives (&minus) in "
-          "his small box, and record the amount each player pays him (+) or receives from him (&minus) in "
+        P("A player who leaves for good cashes out.  Record the amount he pays (+) or receives (&minus;) in "
+          "his small box, and record the amount each player pays him (+) or receives from him (&minus;) in "
           "the appropriate column.  Total up and Check as above: the rows sum to zero, and the cashed-out player "
           "has a zero total also.  Note his exit in the column at the right."
           ),
         Hh("Finishing"),
         P("At the end of the chouette, each player cashes out as described above.  The total of each player "
-          "is now 0.  Wait for the next chouette.")
+          "is now 0.  Wait for the next chouette."),
     ]
-    fh = 300
-    fy = top - 24 - fh
-    Frame(L,
-          fy,
-          R - L - 50,
-          fh, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0).addFromList(story, c)
-    assert not story, "page-2 text overflowed"
 
-    y = fy - 10
-    c.setFont(BOLD, 9.8); c.setFillColor(colors.black)
-    c.drawString(L, y, "Worked example")
+    # ---- worked example: table, then a line of explanation per row --------
     data = [
         dict(cells=[("+4", "4"), ("-2", "-2"), ("-1", "-1"), ("-1", "-1")], chk=True,
              note="Start of chouette."),
@@ -200,31 +226,42 @@ def page2(c):
              note=""),
         dict(cells=[("0", "2"), ("+1", "0"), ("-1", "0"), ("0", "-2")], chk=True,
              note="Bob is out."),
-        dict(cells=[("-1", "1"), ("", ""), ("+1", "1"), ("0", "-2")], chk=True,
+        dict(cells=[("-1", "1"), ("", ""), ("-1", "-1"), ("+2", "0")], chk=True,
              note=""),
-        dict(cells=[("-1", "0"), ("", ""), ("-1", "0"), ("+2", "0")], chk=True,
+        dict(cells=[("-1", "0"), ("", ""), ("+1", "0"), ("0", "0")], chk=True,
              note="End of chouette."),
     ]
-    draw_table(c, L, y - 8, 4, 56, 5, NOTES_W, names=["Anne", "Bob", "Caleb", "Daria"], data=data)
+    table = ExampleTable(4, EXAMPLE_COL_W, EXAMPLE_NOTES_W,
+                         ["Anne", "Bob", "Caleb", "Daria"], data)
+    ns = ParagraphStyle("n", fontName=REG, fontSize=8.4, leading=10.6, spaceAfter=3,
+                        rightIndent=(R - L) - table.width)     # text is as wide as the table
+    N = lambda t: Paragraph(t, ns)
 
-    ns = ParagraphStyle("n", fontName=REG, fontSize=8.4, leading=10.6, spaceAfter=3)
-    st = [
-        Paragraph("<b>Line 1.</b> Anne, in the Box, beats Bob (Captain) with the cube at 2, and beats Caleb and Daria with the cube at 1. "
-                  "Her small box shows +4, and the others show &minus;2, &minus;1 and &minus;1.", ns),
-        Paragraph("<b>Line 2.</b> Caleb is now Captain, Bob is Crew. Caleb wins with his cube at 2 and Bob with his at 1; Daria had already "
-                  "passed Anne's double, so Anne wins 1 from Daria. Anne's net is &minus;2 &minus;1 +1 = &minus;2. "
-                  "Each row's small boxes sum to 0, and the totals do too.", ns),
-        Paragraph("<b>Line 3.</b> Bob leaves the chouette and pays 1 point to Caleb.", ns),
-        Paragraph("<b>Line 4.</b> Daria wins a single from Anne and loses a single to Caleb.", ns),
-        Paragraph("<b>Line 5.</b> Everybody cashes out: Daria pays a point each to Anne and Caleb.", ns),
-
+    story += [
+        Spacer(1, EXAMPLE_GAP),
+        Hh("Worked example"),
+        Spacer(1, 4),
+        table,
+        Spacer(1, EXAMPLE_TEXT_GAP),
+        N("<b>Line 1.</b> Anne, in the Box, beats Bob (Captain) with the cube at 2, and beats Caleb and Daria with the cube at 1. "
+          "Her small box shows +4, and the others show &minus;2, &minus;1 and &minus;1."),
+        N("<b>Line 2.</b> Caleb is now Captain, Bob is Crew. Caleb wins with his cube at 2 and Bob with his at 1; Daria had already "
+          "passed Anne's double, so Anne wins 1 from Daria. Anne's net is &minus;2 &minus;1 +1 = &minus;2. "
+          "Each row's small boxes sum to 0, and the totals do too."),
+        N("<b>Line 3.</b> Bob leaves the chouette and pays 1 point to Caleb. His small box shows +1, bringing his "
+          "total to 0; Caleb's shows &minus;1, bringing his to 0. The others record 0 and carry their totals down."),
+        N("<b>Line 4.</b> Caleb, as Captain, beat the Box in Line 2, so he is now the Box; Daria is Captain and Anne is Crew. "
+          "Caleb doubles them both. Anne passes, so Caleb wins 1 from her. Daria takes and wins a single with the cube at 2, "
+          "so Caleb loses 2 to her. His net is &minus;2 +1 = &minus;1. Bob's column is closed and left blank."),
+        N("<b>Line 5.</b> Everybody cashes out. Caleb pays 1 point to Anne; Daria, at zero, neither pays nor receives. "
+          "Every total is now 0."),
     ]
-    yb = y - 8 - HDR_H - 2 * ROW_H - 10
-    Frame(L,
-          yb - 200 - 20,
-          R - L - 235,
-          125, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0).addFromList(st, c)
-    assert not st, "example text overflowed"
+
+    frame = Frame(L, MARGIN, R - L, H - 2 * MARGIN,
+                  leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    frame.addFromList(story, c)
+    assert not story, "page 2 overflowed: trim text or spacing, or reduce MARGIN"
+
 
 def main():
     c = canvas.Canvas(OUTFILE, pagesize=PAGESIZE)
