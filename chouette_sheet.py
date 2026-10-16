@@ -50,6 +50,8 @@ EXAMPLE_GAP     = 24             # space above the "Worked example" heading
 EXAMPLE_TEXT_GAP = 10            # space between the example table and its explanation
 EXAMPLE_COL_W   = 56             # width of each player column in the example
 EXAMPLE_NOTES_W = 62
+EXAMPLE_SIDE_GAP = 14            # gap between the example table and the rotation shown beside it
+EXAMPLE_SIDE_SIZE = 8            # type size of the rotation shown beside the example
 # ----------------------------------------------------------------------
 
 W, H = PAGESIZE
@@ -163,10 +165,11 @@ def page1(c):
 
 class ExampleTable(Flowable):
     """The worked-example grid as a flowable: it reports its own height."""
-    def __init__(self, ncols, cw, notes_w, names, data):
+    def __init__(self, ncols, cw, notes_w, names, data, side=None):
         super().__init__()
         self.ncols, self.cw, self.notes_w = ncols, cw, notes_w
         self.names, self.data = names, data
+        self.side = side or []
         self.width = ncols * cw + CHK_W + notes_w
         self.height = HDR_H + len(data) * ROW_H
 
@@ -176,6 +179,12 @@ class ExampleTable(Flowable):
     def draw(self):      # origin is the flowable's lower-left corner
         draw_table(self.canv, 0, self.height, self.ncols, self.cw, len(self.data),
                    self.notes_w, names=self.names, data=self.data)
+        if self.side:        # one line of text beside each row, to the right of the table
+            c, x = self.canv, self.width + EXAMPLE_SIDE_GAP
+            c.setFillColor(colors.black)
+            c.setFont(REG, EXAMPLE_SIDE_SIZE)
+            for r, text in enumerate(self.side):     # baseline offset keeps the text centered on the row
+                c.drawString(x, self.height - HDR_H - (r + 0.5) * ROW_H - EXAMPLE_SIDE_SIZE * 0.33, text)
 
 
 def page2(c):
@@ -231,8 +240,15 @@ def page2(c):
         dict(cells=[("-1", "0"), ("", ""), ("+1", "0"), ("0", "0")], chk=True,
              note="End of chouette."),
     ]
+    rotation = [                          # order at the start of each line: Box, Captain, Crew...
+        "Anne / Bob / Caleb / Daria",
+        "Anne / Caleb / Daria / Bob",
+        "Caleb / Daria / Bob / Anne",
+        "Caleb / Daria / Anne",
+        "",
+    ]
     table = ExampleTable(4, EXAMPLE_COL_W, EXAMPLE_NOTES_W,
-                         ["Anne", "Bob", "Caleb", "Daria"], data)
+                         ["Anne", "Bob", "Caleb", "Daria"], data, side=rotation)
     ns = ParagraphStyle("n", fontName=REG, fontSize=8.4, leading=10.6, spaceAfter=3,
                         rightIndent=(R - L) - table.width)     # text is as wide as the table
     N = lambda t: Paragraph(t, ns)
