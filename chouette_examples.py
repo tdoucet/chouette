@@ -15,37 +15,23 @@ OUTFILE   = "chouette_examples.pdf"
 DOC_TITLE = None        # None: each example's own title is its heading
 INTRO     = None        # optional paragraph (or list of paragraphs) under the document title
 
-# --- A new example: copy this skeleton, fill it in, and add it to EXAMPLES. ---
-#
-# TRICKY = dict(
-#     title="A short heading",              # shown above the example when there are several
-#     intro="One or two sentences setting up the situation.",
-#     names=["Anne", "Bob", "Caleb", "Daria"],
-#     rows=[
-#         dict(cells=[("+2", "2"), ("-1", "-1"), ("-1", "-1"), ("0", "0")],
-#              note="Short note.",                          # Notes column
-#              rotation="Anne / Bob / Caleb / Daria",       # shown beside the row
-#              text="What happened and how it is scored."), # explanation below the table
-#         # ... one dict per row ...
-#     ],
-#     outro="Anything to say after the explanations.",
-# )
-
 EXTRAS_EXAMPLE = dict(
     title="Cube Extras",
     names=["Chris", "Todd", "Pete", "Steve"],
     rows=[
         dict(cells=[("", "3"), ("", "-2"), ("", "7"), ("", "-8")],
-             text="Prior games.", rotation="",
+             text="Prior games.",
+             rotation=""
              ),
                   
-        dict(cells=[("+2", "5"), ("-1", "-3"), ("0", "7"), ("-1", "-9")],
+        dict(cells=[("+2", ""), ("-1", ""), ("0", ""), ("-1", "")],
              note = "drops",
              rotation="Chris / Pete / Steve / Todd",
              text="Box Chris doubles all from center.  Captain Pete is the lone "
-                  "taker. Record the drops now."),
+                  "taker. Record the drops now."
+             ),
 
-        dict(cells=[("0", "5"), ("-1", "-4"), ("+2", "9"), ("-1", "-10")],
+        dict(cells=[("0", ""), ("-1", ""), ("+2", ""), ("-1", "")],
              note="extras",
              rotation="Chris / Pete / Steve / Todd",
              text="Crew gives Extras.  Record those payments now."
@@ -63,47 +49,13 @@ EXTRAS_EXAMPLE = dict(
              note="",
              chk=False,
              rotation="Chris / Steve / Todd / Pete",
-             text="Steve is next up as Captain."),
-    ],
-)
-
-EXTRAS_EXAMPLE_2 = dict(
-    title="Cube Extras: streamlined",
-    names=["Chris", "Todd", "Pete", "Steve"],
-    outro="Same game, with the intermediate totals omitted. Each total includes the "
-          "sum of the small boxes above it.",
-    rows=[
-        dict(cells=[("", "3"), ("", "-2"), ("", "7"), ("", "-8")],
-             rotation="",
-             ),
-                  
-        dict(cells=[("+2", ""), ("-1", ""), ("0", ""), ("-1", "")],
-             note = "drops",
-             rotation="Chris / Pete / Steve / Todd",
-             ),
-
-        dict(cells=[("0", ""), ("-1", ""), ("+2", ""), ("-1", "")],
-             note="extras",
-             rotation="Chris / Pete / Steve / Todd",
-             ),
-
-        dict(cells=[("+4", "9"), ("+4", "0"), ("-12", "-3"), ("+4", "-6")],
-             rotation="Chris / Pete / Steve / Todd",
-             note="end of game",
-             ),
-
-        dict(cells=[("", ""), ("", ""), ("", ""), ("", "")],
-             note="",
-             chk=False,
-             rotation="Chris / Steve / Todd / Pete",
+             text="Steve is next up as Captain."
              ),
     ],
 )
 
 
-EXAMPLES = [EXTRAS_EXAMPLE, EXTRAS_EXAMPLE_2]
-
-
+EXAMPLES = [EXTRAS_EXAMPLE]
 
 
 if __name__ == "__main__":
