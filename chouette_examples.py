@@ -61,7 +61,7 @@ PARTNERS_EXAMPLE = dict(
     names=["Chris", "Todd", "Pete", "Steve", "Gerry", "Hana"],
     rows=[
         dict(cells=[("", "9"), ("", "0"), ("", "-3"), ("", "-6"), ("", "0"), ("", "0")],
-             note="Hana is in.",
+             note="Hana is in.\nGerry is in.",
              rotation="Chris / Steve / Todd* / Pete / Gerry / Hana",
              text="Hana joins at the bottom. Box Chris invites Todd, next in line after Captain Steve, "
                   "to be his Partner. Todd accepts."),
