@@ -14,7 +14,9 @@ Line weights and the single grey tint are set in the CONFIG block.
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Paragraph, Frame, Spacer, Flowable
+from reportlab.platypus import (Paragraph, Frame, Spacer, Flowable,
+                                SimpleDocTemplate, KeepTogether, PageBreak)
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.lib import colors
 import argparse
 import os
@@ -38,7 +40,7 @@ PRESETS = {
 }
 DEFAULT_PRESET  = "standard"
 HDR_RATIO       = 30 / 32        # name-header height as a fraction of the row height
-OPTIONS         = ["Jacoby waived", "Beavers", "Partners", "Extras"]
+OPTIONS         = ["Jacoby waived", "Beavers", "Extras", "Partners"]
 INCLUDE_INSTRUCTIONS = True
 
 LINE_THIN       = 0.4            # row lines, column lines, delta-box outlines
@@ -68,6 +70,8 @@ EXAMPLE_COL_W   = 56             # width of each player column in the example
 EXAMPLE_NOTES_W = 62
 EXAMPLE_ROW_H   = 32             # the worked example keeps its own fixed cell size
 EXAMPLE_HDR_H   = 30
+EXAMPLE_COL_MIN = 36             # narrowest player column allowed when a wide example has to shrink
+EXAMPLE_LABEL   = "Line"         # explanations are labeled "Line 1.", "Line 2." ...
 EXAMPLE_SIDE_GAP = 14            # gap between the example table and the rotation shown beside it
 EXAMPLE_SIDE_SIZE = 8            # type size of the rotation shown beside the example
 # ----------------------------------------------------------------------
@@ -77,6 +81,11 @@ L, R = MARGIN, W - MARGIN
 REG, BOLD, ITAL = "Helvetica", "Helvetica-Bold", "Helvetica-Oblique"
 grey = colors.Color(TINT, TINT, TINT)
 grid = colors.Color(GRID, GRID, GRID)
+
+STYLE_TITLE = ParagraphStyle("t", fontName=BOLD, fontSize=16, leading=20, spaceAfter=6)
+STYLE_BODY  = ParagraphStyle("b", fontName=REG, fontSize=8.8, leading=11.2, spaceAfter=3.5,
+                             rightIndent=TEXT_RIGHT_INDENT)
+STYLE_HEAD  = ParagraphStyle("h", fontName=BOLD, fontSize=9.8, leading=12, spaceBefore=4, spaceAfter=2)
 
 
 def field(c, x, y, label, width, size=9):
@@ -207,16 +216,119 @@ class ExampleTable(Flowable):
                 c.drawString(x, self.height - EXAMPLE_HDR_H - (r + 0.5) * EXAMPLE_ROW_H - EXAMPLE_SIDE_SIZE * 0.33, text)
 
 
+# ---------------------------------------------------------------------------
+# Worked examples.  An example is plain data:
+#
+#   names   the player columns, left to right
+#   rows    one dict per row of the sheet:
+#             cells     [(small_box, total), ...]  one pair per player; ("", "") leaves a cell blank
+#             note      text for the Notes column   (optional)
+#             rotation  the rotation at the start of that row, shown beside the table (optional)
+#             text      the explanation printed below the table (optional); numbered automatically
+#             label     replaces the automatic "Line n." (optional)
+#             chk       set False to leave the check box unticked (default True)
+#   title   heading used when several examples share a document (optional)
+#   intro / outro   a paragraph, or a list of paragraphs, before / after the table (optional)
+#   notes_w width of the Notes column (optional)
+# ---------------------------------------------------------------------------
+BASIC_EXAMPLE = dict(
+    names=["Anne", "Bob", "Caleb", "Daria"],
+    rows=[
+        dict(cells=[("+4", "4"), ("-2", "-2"), ("-1", "-1"), ("-1", "-1")],
+             note="Start of chouette.", rotation="Anne / Bob / Caleb / Daria",
+             text="Anne, in the Box, beats Bob (Captain) with the cube at 2, and beats Caleb and Daria with the cube at 1. "
+                  "Her small box shows +4, and the others show &minus;2, &minus;1 and &minus;1."),
+        dict(cells=[("-2", "2"), ("+1", "-1"), ("+2", "1"), ("-1", "-2")],
+             rotation="Anne / Caleb / Daria / Bob",
+             text="Caleb is now Captain, Bob is Crew. Caleb wins with his cube at 2 and Bob with his at 1; Daria had already "
+                  "passed Anne's double, so Anne wins 1 from Daria. Anne's net is &minus;2 &minus;1 +1 = &minus;2. "
+                  "Each row's small boxes sum to 0, and the totals do too."),
+        dict(cells=[("0", "2"), ("+1", "0"), ("-1", "0"), ("0", "-2")],
+             note="Bob is out.", rotation="Caleb / Daria / Bob / Anne",
+             text="Bob leaves the chouette and pays 1 point to Caleb. His small box shows +1, bringing his "
+                  "total to 0; Caleb's shows &minus;1, bringing his to 0. The others record 0 and carry their totals down."),
+        dict(cells=[("-1", "1"), ("", ""), ("-1", "-1"), ("+2", "0")],
+             rotation="Caleb / Daria / Anne",
+             text="Caleb, as Captain, beat the Box in Line 2, so he is now the Box; Daria is Captain and Anne is Crew. "
+                  "Caleb doubles them both. Anne passes, so Caleb wins 1 from her. Daria takes and wins a single with the cube at 2, "
+                  "so Caleb loses 2 to her. His net is &minus;2 +1 = &minus;1. Bob's column is closed and left blank."),
+        dict(cells=[("-1", "0"), ("", ""), ("+1", "0"), ("0", "0")],
+             note="End of chouette.",
+             text="Everybody cashes out. Caleb pays 1 point to Anne; Daria, at zero, neither pays nor receives. "
+                  "Every total is now 0."),
+    ],
+)
+
+
+def _as_list(x):
+    return [] if x is None else ([x] if isinstance(x, str) else list(x))
+
+
+def example_flowables(spec, heading=None, heading_style=None):
+    """Turn an example spec into flowables: optional heading, intro, the table, one
+    explanation per row, outro.  The table keeps its standard column width unless that
+    many players (plus the rotation beside it) would not fit between the margins."""
+    names, rows = spec["names"], spec["rows"]
+    notes_w = spec.get("notes_w", EXAMPLE_NOTES_W)
+    data = [dict(cells=r["cells"], chk=r.get("chk", True), note=r.get("note", "")) for r in rows]
+    side = [r.get("rotation", "") for r in rows]
+
+    side_w = max(stringWidth(t, REG, EXAMPLE_SIDE_SIZE) for t in side)
+    room = (R - L) - CHK_W - notes_w - (EXAMPLE_SIDE_GAP + side_w if side_w else 0)
+    cw = min(EXAMPLE_COL_W, room / len(names))
+    assert cw >= EXAMPLE_COL_MIN, ("example is too wide for the page: fewer players, "
+                                   "a narrower notes_w, or shorter rotation text")
+    table = ExampleTable(len(names), cw, notes_w, names, data, side=side)
+
+    expl = ParagraphStyle("n", fontName=REG, fontSize=8.4, leading=10.6, spaceAfter=3,
+                          rightIndent=(R - L) - table.width)        # text is as wide as the table
+    out = []
+    if heading:
+        out += [Paragraph(heading, heading_style or STYLE_HEAD), Spacer(1, 4)]
+    out += [Paragraph(t, expl) for t in _as_list(spec.get("intro"))]
+    out += [table, Spacer(1, EXAMPLE_TEXT_GAP)]
+    for i, r in enumerate(rows, 1):
+        if r.get("text"):
+            label = r.get("label", "%s %d." % (EXAMPLE_LABEL, i))
+            out.append(Paragraph("<b>%s</b> %s" % (label, r["text"]), expl))
+    out += [Paragraph(t, expl) for t in _as_list(spec.get("outro"))]
+    return out
+
+
+def write_examples(path, doc_title, examples, intro=None, page_per_example=False):
+    """Write a standalone PDF containing one or more worked examples; it flows onto more
+    pages as needed, and each example's heading and table stay together on a page.
+
+    doc_title    a title for the whole document, with each example's `title` as a small
+                 heading beneath it.  Pass None for no document title: each example's
+                 `title` then becomes a large heading of its own.
+    page_per_example   start every example on a new page."""
+    first_title = examples[0].get("title") if examples else None
+    pdf_title = doc_title or first_title or "Chouette worked examples"
+    doc = SimpleDocTemplate(path, pagesize=PAGESIZE, title=pdf_title,
+                            leftMargin=L, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=MARGIN)
+    story = []
+    if doc_title:
+        story.append(Paragraph(doc_title, STYLE_TITLE))
+    story += [Paragraph(t, STYLE_BODY) for t in _as_list(intro)]
+    heading_style = STYLE_HEAD if doc_title else STYLE_TITLE
+    for n, ex in enumerate(examples):
+        flows = example_flowables(ex, heading=ex.get("title"), heading_style=heading_style)
+        k = next(i for i, f in enumerate(flows) if isinstance(f, ExampleTable))
+        if n > 0:
+            story.append(PageBreak() if page_per_example else Spacer(1, EXAMPLE_GAP))
+        elif doc_title or intro:
+            story.append(Spacer(1, EXAMPLE_GAP))
+        story += [KeepTogether(flows[:k + 1])] + flows[k + 1:]
+    doc.build(story)
+
+
 def page2(c):
-    title = ParagraphStyle("t", fontName=BOLD, fontSize=16, leading=20, spaceAfter=6)
-    body = ParagraphStyle("b", fontName=REG, fontSize=8.8, leading=11.2, spaceAfter=3.5,
-                          rightIndent=TEXT_RIGHT_INDENT)
-    head = ParagraphStyle("h", fontName=BOLD, fontSize=9.8, leading=12, spaceBefore=4, spaceAfter=2)
-    P = lambda t: Paragraph(t, body)
-    Hh = lambda t: Paragraph(t, head)
+    P = lambda t: Paragraph(t, STYLE_BODY)
+    Hh = lambda t: Paragraph(t, STYLE_HEAD)
 
     story = [
-        Paragraph("Using the chouette score sheet", title),
+        Paragraph("Using the chouette score sheet", STYLE_TITLE),
         Hh("Starting"),
         P("Write the per-point stake at the top and tick the options in effect. The Jacoby rule "
           "applies unless waived. Write each player's name at the head of a column, in any order; column order "
@@ -247,51 +359,7 @@ def page2(c):
           "is now 0.  Wait for the next chouette."),
     ]
 
-    # ---- worked example: table, then a line of explanation per row --------
-    data = [
-        dict(cells=[("+4", "4"), ("-2", "-2"), ("-1", "-1"), ("-1", "-1")], chk=True,
-             note="Start of chouette."),
-        dict(cells=[("-2", "2"), ("+1", "-1"), ("+2", "1"), ("-1", "-2")], chk=True,
-             note=""),
-        dict(cells=[("0", "2"), ("+1", "0"), ("-1", "0"), ("0", "-2")], chk=True,
-             note="Bob is out."),
-        dict(cells=[("-1", "1"), ("", ""), ("-1", "-1"), ("+2", "0")], chk=True,
-             note=""),
-        dict(cells=[("-1", "0"), ("", ""), ("+1", "0"), ("0", "0")], chk=True,
-             note="End of chouette."),
-    ]
-    rotation = [                          # order at the start of each line: Box, Captain, Crew...
-        "Anne / Bob / Caleb / Daria",
-        "Anne / Caleb / Daria / Bob",
-        "Caleb / Daria / Bob / Anne",
-        "Caleb / Daria / Anne",
-        "",
-    ]
-    table = ExampleTable(4, EXAMPLE_COL_W, EXAMPLE_NOTES_W,
-                         ["Anne", "Bob", "Caleb", "Daria"], data, side=rotation)
-    ns = ParagraphStyle("n", fontName=REG, fontSize=8.4, leading=10.6, spaceAfter=3,
-                        rightIndent=(R - L) - table.width)     # text is as wide as the table
-    N = lambda t: Paragraph(t, ns)
-
-    story += [
-        Spacer(1, EXAMPLE_GAP),
-        Hh("Worked example"),
-        Spacer(1, 4),
-        table,
-        Spacer(1, EXAMPLE_TEXT_GAP),
-        N("<b>Line 1.</b> Anne, in the Box, beats Bob (Captain) with the cube at 2, and beats Caleb and Daria with the cube at 1. "
-          "Her small box shows +4, and the others show &minus;2, &minus;1 and &minus;1."),
-        N("<b>Line 2.</b> Caleb is now Captain, Bob is Crew. Caleb wins with his cube at 2 and Bob with his at 1; Daria had already "
-          "passed Anne's double, so Anne wins 1 from Daria. Anne's net is &minus;2 &minus;1 +1 = &minus;2. "
-          "Each row's small boxes sum to 0, and the totals do too."),
-        N("<b>Line 3.</b> Bob leaves the chouette and pays 1 point to Caleb. His small box shows +1, bringing his "
-          "total to 0; Caleb's shows &minus;1, bringing his to 0. The others record 0 and carry their totals down."),
-        N("<b>Line 4.</b> Caleb, as Captain, beat the Box in Line 2, so he is now the Box; Daria is Captain and Anne is Crew. "
-          "Caleb doubles them both. Anne passes, so Caleb wins 1 from her. Daria takes and wins a single with the cube at 2, "
-          "so Caleb loses 2 to her. His net is &minus;2 +1 = &minus;1. Bob's column is closed and left blank."),
-        N("<b>Line 5.</b> Everybody cashes out. Caleb pays 1 point to Anne; Daria, at zero, neither pays nor receives. "
-          "Every total is now 0."),
-    ]
+    story += [Spacer(1, EXAMPLE_GAP)] + example_flowables(BASIC_EXAMPLE, heading="Worked example")
 
     frame = Frame(L, MARGIN, R - L, H - 2 * MARGIN,
                   leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
