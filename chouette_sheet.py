@@ -74,6 +74,7 @@ EXAMPLE_COL_MIN = 36             # narrowest player column allowed when a wide e
 EXAMPLE_LABEL   = "Line"         # explanations are labeled "Line 1.", "Line 2." ...
 EXAMPLE_SIDE_GAP = 14            # gap between the example table and the rotation shown beside it
 EXAMPLE_SIDE_SIZE = 8            # type size of the rotation shown beside the example
+EXAMPLE_NOTE_SIZE = 7            # type size of the italic note above the rotation (side_note)
 # ----------------------------------------------------------------------
 
 W, H = PAGESIZE
@@ -86,6 +87,8 @@ STYLE_TITLE = ParagraphStyle("t", fontName=BOLD, fontSize=16, leading=20, spaceA
 STYLE_BODY  = ParagraphStyle("b", fontName=REG, fontSize=8.8, leading=11.2, spaceAfter=3.5,
                              rightIndent=TEXT_RIGHT_INDENT)
 STYLE_HEAD  = ParagraphStyle("h", fontName=BOLD, fontSize=9.8, leading=12, spaceBefore=4, spaceAfter=2)
+STYLE_SIDE_NOTE = ParagraphStyle("sn", fontName=ITAL, fontSize=EXAMPLE_NOTE_SIZE,
+                                 leading=EXAMPLE_NOTE_SIZE * 1.2)
 
 
 def field(c, x, y, label, width, size=9):
@@ -194,20 +197,26 @@ def page1(c, players, rows, notes_w):
 
 class ExampleTable(Flowable):
     """The worked-example grid as a flowable: it reports its own height."""
-    def __init__(self, ncols, cw, notes_w, names, data, side=None):
+    def __init__(self, ncols, cw, notes_w, names, data, side=None, side_note=None):
         super().__init__()
         self.ncols, self.cw, self.notes_w = ncols, cw, notes_w
         self.names, self.data = names, data
         self.side = side or []
+        self.side_note = side_note
         self.width = ncols * cw + CHK_W + notes_w
         self.height = EXAMPLE_HDR_H + len(data) * EXAMPLE_ROW_H
 
     def wrap(self, avail_w, avail_h):
+        self.avail_w = avail_w            # remembered so the side note knows how wide it may be
         return self.width, self.height
 
     def draw(self):      # origin is the flowable's lower-left corner
         draw_table(self.canv, 0, self.height, self.ncols, self.cw, len(self.data),
                    EXAMPLE_ROW_H, EXAMPLE_HDR_H, self.notes_w, names=self.names, data=self.data)
+        if self.side_note:   # sits in the header band, right of the table, over the rotation
+            p = Paragraph(self.side_note, STYLE_SIDE_NOTE)
+            p.wrap(self.avail_w - self.width - EXAMPLE_SIDE_GAP, EXAMPLE_HDR_H * 4)
+            p.drawOn(self.canv, self.width + EXAMPLE_SIDE_GAP, self.height - EXAMPLE_HDR_H + 4)
         if self.side:        # one line of text beside each row, to the right of the table
             c, x = self.canv, self.width + EXAMPLE_SIDE_GAP
             c.setFillColor(colors.black)
@@ -227,6 +236,7 @@ class ExampleTable(Flowable):
 #             text      the explanation printed below the table (optional); numbered automatically
 #             label     replaces the automatic "Line n." (optional)
 #             chk       set False to leave the check box unticked (default True)
+#   side_note  small italic note over the rotation, beside the table (optional)
 #   title   heading used when several examples share a document (optional)
 #   intro / outro   a paragraph, or a list of paragraphs, before / after the table (optional)
 #   notes_w width of the Notes column (optional)
@@ -278,7 +288,8 @@ def example_flowables(spec, heading=None, heading_style=None):
     cw = min(EXAMPLE_COL_W, room / len(names))
     assert cw >= EXAMPLE_COL_MIN, ("example is too wide for the page: fewer players, "
                                    "a narrower notes_w, or shorter rotation text")
-    table = ExampleTable(len(names), cw, notes_w, names, data, side=side)
+    table = ExampleTable(len(names), cw, notes_w, names, data, side=side,
+                         side_note=spec.get("side_note"))
 
     expl = ParagraphStyle("n", fontName=REG, fontSize=8.4, leading=10.6, spaceAfter=3,
                           rightIndent=(R - L) - table.width)        # text is as wide as the table
