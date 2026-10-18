@@ -58,31 +58,31 @@ EXTRAS_EXAMPLE = dict(
 PARTNERS_EXAMPLE = dict(
     title="Partners",
     side_note="* marks this game's Partner.",
-    names=["Chris", "Todd", "Pete", "Steve", "Gerry", "Hana"],
+    names=["Chris", "Todd", "Pete", "Steve", "Jerry", "Hana"],
     rows=[
         dict(cells=[("", "9"), ("", "0"), ("", "-3"), ("", "-6"), ("", "0"), ("", "0")],
-             note="Hana is in.\nGerry is in.",
-             rotation="Chris / Steve / Todd* / Pete / Gerry / Hana",
-             text="Hana and Gerry join at the bottom. Box Chris invites Todd, next in line after Captain Steve, "
+             note="Hana is in.\nJerry is in.",
+             rotation="Chris / Steve / Todd* / Pete / Jerry / Hana",
+             text="Hana and Jerry join at the bottom. Box Chris invites Todd, next in line after Captain Steve, "
                   "to be his Partner. Todd accepts."),
 
         dict(cells=[("+1", ""), ("+1", ""), ("", ""), ("", ""), ("-1", ""), ("-1", "")],
-             rotation="Chris / Steve / Todd* / Pete / Gerry / Hana",
-             text="Box doubles everyone. Gerry and Hana pass. Steve and Pete take, so their boxes stay open. "
+             rotation="Chris / Steve / Todd* / Pete / Jerry / Hana",
+             text="Box doubles everyone. Jerry and Hana pass. Steve and Pete take, so their boxes stay open. "
                   "The partners split the two points."),
 
         dict(cells=[("+1", ""), ("+1", ""), ("", ""), ("-2", ""), ("0", ""), ("0", "")],
-             rotation="Chris / Steve / Todd* / Pete / Gerry / Hana",
+             rotation="Chris / Steve / Todd* / Pete / Jerry / Hana",
              text="Box redoubles and Captain Steve drops, losing 2. Pete is Acting Captain."),
 
         dict(cells=[("-1", "10"), ("-1", "1"), ("+2", "-1"), ("0", "-8"), ("0", "-1"), ("0", "-1")],
-             rotation="Chris / Steve / Todd* / Pete / Gerry / Hana",
+             rotation="Chris / Steve / Todd* / Pete / Jerry / Hana",
              text="Pete wins a single with the cube at 2, so the partners lose 2 and split it. "
                   "Together they are up 2 on the game, and they beat the Captain."),
 
         dict(cells=[("", ""), ("", ""), ("", ""), ("", ""), ("", ""), ("", "")],
              chk=False,
-             rotation="Chris / Todd / Pete / Gerry / Hana / Steve",
+             rotation="Chris / Todd / Pete / Jerry / Hana / Steve",
              text="Chris keeps the Box and Steve goes to the bottom. The partnership is over. "
                   "Todd is now Captain, and Chris may invite Pete."),
     ],
