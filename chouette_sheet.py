@@ -2,13 +2,18 @@
 """
 Chouette score sheet generator (ReportLab).
 
-    python chouette_sheet.py                  # the standard sheet -> chouette_sheet.pdf
+    python chouette_sheet.py                  # both PDFs, standard size
     python chouette_sheet.py large            # a named size from PRESETS
     python chouette_sheet.py --players 7 --rows 14
-    python chouette_sheet.py large --sheet-only   # page 1 only, no instructions
+    python chouette_sheet.py --sheet-only     # just the score sheet
+    python chouette_sheet.py --guide-only     # just the explanatory pages
 
-Page 1 = blank sheet.  Page 2 = instructions + worked example.
+Two files come out:
+    chouette_sheet.pdf         the score sheet proper, one page
+    chouette_instructions.pdf  two pages: the instructions with the basic worked example,
+                               then the worked examples from chouette_examples.py
 
+chouette_examples.py still runs on its own to make a standalone examples document.
 Line weights and the single grey tint are set in the CONFIG block.
 """
 from reportlab.lib.pagesizes import letter
@@ -23,9 +28,11 @@ import os
 
 # ----------------------------- CONFIG ---------------------------------
 OUTFILE         = "chouette_sheet.pdf"
+GUIDE_FILE      = "chouette_instructions.pdf"
 PAGESIZE        = letter
 MARGIN          = 30
 TITLE           = "Chouette Score Sheet"
+GUIDE_TITLE     = "Chouette Score Sheet: Instructions and Examples"
 CHK_W           = 24
 
 # Sheet sizes.  Choose by name on the command line, or override with --players / --rows.
@@ -41,14 +48,13 @@ PRESETS = {
 DEFAULT_PRESET  = "standard"
 HDR_RATIO       = 30 / 32        # name-header height as a fraction of the row height
 OPTIONS         = ["Jacoby waived", "Beavers", "Extras", "Partners"]
-INCLUDE_INSTRUCTIONS = True
 
 LINE_THIN       = 0.4            # row lines, column lines, delta-box outlines
 LINE_HEAVY      = 0.8            # outer frame and the rule under the header
 LINE_FIELD      = 0.5            # underlines of fill-in fields
 LINE_BOX        = 0.7            # option checkboxes
 GRID            = 0.35           # grey level of row lines and delta-box outlines
-TINT            = 0.95           # every grey area (delta boxes, check column); 1 = white
+TINT            = 1.00           # every grey area (delta boxes, check column); 1 = white
 DELTA_W_FRAC    = 0.56
 DELTA_H_FRAC    = 0.42
 
@@ -183,11 +189,11 @@ def page1(c, players, rows, notes_w):
     field(c, R - STAKE_W, top - TITLE_DROP, "Stake:", STAKE_W)    # ends at the right margin
 
     y = top - OPTIONS_DROP
-    c.setFont(BOLD, 9); c.drawString(L, y, "Options:")
-    x = L + OPTIONS_INDENT
-    for lab in OPTIONS:
-        x = checkbox(c, x, y, lab)
-    field(c, x, y, "Other", R - x)
+    # c.setFont(BOLD, 9); c.drawString(L, y, "Options:")
+    # x = L + OPTIONS_INDENT
+    # for lab in OPTIONS:
+    #     x = checkbox(c, x, y, lab)
+    # field(c, x, y, "Other", R - x)
 
     cw = (R - L - CHK_W - notes_w) / players
     y_top = y - TABLE_GAP
@@ -307,18 +313,9 @@ def example_flowables(spec, heading=None, heading_style=None):
     return out
 
 
-def write_examples(path, doc_title, examples, intro=None, page_per_example=False):
-    """Write a standalone PDF containing one or more worked examples; it flows onto more
-    pages as needed, and each example's heading and table stay together on a page.
-
-    doc_title    a title for the whole document, with each example's `title` as a small
-                 heading beneath it.  Pass None for no document title: each example's
-                 `title` then becomes a large heading of its own.
-    page_per_example   start every example on a new page."""
-    first_title = examples[0].get("title") if examples else None
-    pdf_title = doc_title or first_title or "Chouette worked examples"
-    doc = SimpleDocTemplate(path, pagesize=PAGESIZE, title=pdf_title,
-                            leftMargin=L, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=MARGIN)
+def examples_story(doc_title, examples, intro=None, page_per_example=False, keep=True):
+    """The flowables for one or more worked examples, shared by the standalone document
+    (write_examples) and the examples page of the combined sheet (page_examples)."""
     story = []
     if doc_title:
         story.append(Paragraph(doc_title, STYLE_TITLE))
@@ -331,8 +328,33 @@ def write_examples(path, doc_title, examples, intro=None, page_per_example=False
             story.append(PageBreak() if page_per_example else Spacer(1, EXAMPLE_GAP))
         elif doc_title or intro:
             story.append(Spacer(1, EXAMPLE_GAP))
-        story += [KeepTogether(flows[:k + 1])] + flows[k + 1:]
-    doc.build(story)
+        head = flows[:k + 1]
+        story += ([KeepTogether(head)] if keep else head) + flows[k + 1:]
+    return story
+
+
+def write_examples(path, doc_title, examples, intro=None, page_per_example=False):
+    """Write a standalone PDF containing one or more worked examples; it flows onto more
+    pages as needed, and each example's heading and table stay together on a page.
+
+    doc_title    a title for the whole document, with each example's `title` as a small
+                 heading beneath it.  Pass None for no document title: each example's
+                 `title` then becomes a large heading of its own.
+    page_per_example   start every example on a new page."""
+    first_title = examples[0].get("title") if examples else None
+    pdf_title = doc_title or first_title or "Chouette worked examples"
+    doc = SimpleDocTemplate(path, pagesize=PAGESIZE, title=pdf_title,
+                            leftMargin=L, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=MARGIN)
+    doc.build(examples_story(doc_title, examples, intro, page_per_example))
+
+
+def page_examples(c, doc_title, examples, intro=None):
+    """The same examples, drawn onto one page of a canvas (the combined sheet)."""
+    story = examples_story(doc_title, examples, intro, keep=False)
+    # default 6 pt padding, as in the standalone document, so the page matches it exactly
+    frame = Frame(L, MARGIN, R - L, H - 2 * MARGIN)
+    frame.addFromList(story, c)
+    assert not story, "the examples page overflowed: fewer or shorter examples, or reduce MARGIN"
 
 
 def page2(c):
@@ -379,15 +401,36 @@ def page2(c):
     assert not story, "page 2 overflowed: trim text or spacing, or reduce MARGIN"
 
 
+def write_sheet(path, players, rows, notes_w):
+    c = canvas.Canvas(path, pagesize=PAGESIZE)
+    c.setTitle(TITLE)
+    page1(c, players, rows, notes_w)
+    c.save()
+
+
+def write_guide(path):
+    """Two pages: the instructions with the basic worked example, then the examples file's pages."""
+    import chouette_examples             # the examples file stays the one place the examples live
+    c = canvas.Canvas(path, pagesize=PAGESIZE)
+    c.setTitle(GUIDE_TITLE)
+    page2(c)
+    c.showPage()
+    page_examples(c, chouette_examples.DOC_TITLE, chouette_examples.EXAMPLES,
+                  intro=chouette_examples.INTRO)
+    c.save()
+
+
 def main():
-    ap = argparse.ArgumentParser(description="Generate the chouette score sheet.")
+    ap = argparse.ArgumentParser(description="Generate the chouette score sheet and its instructions.")
     ap.add_argument("preset", nargs="?", default=DEFAULT_PRESET, choices=sorted(PRESETS),
                     help="named size (default: %s)" % DEFAULT_PRESET)
     ap.add_argument("--players", type=int, help="override the number of player columns")
     ap.add_argument("--rows", type=int, help="override the number of rows")
     ap.add_argument("--notes", type=int, help="override the Notes column width (points)")
-    ap.add_argument("--sheet-only", action="store_true", help="page 1 only; omit the instructions")
-    ap.add_argument("--out", help="output file name")
+    ap.add_argument("--sheet-only", action="store_true", help="write only the score sheet")
+    ap.add_argument("--guide-only", action="store_true", help="write only the instructions PDF")
+    ap.add_argument("--out", help="score sheet file name")
+    ap.add_argument("--guide-out", help="instructions file name")
     a = ap.parse_args()
 
     size = dict(PRESETS[a.preset])
@@ -395,19 +438,17 @@ def main():
         if val is not None:
             size[key] = val
 
-    out = a.out
-    if not out:                          # the standard sheet keeps the plain name
-        stem, ext = os.path.splitext(OUTFILE)
-        standard = size == PRESETS[DEFAULT_PRESET]
-        out = OUTFILE if standard else "%s_%dx%d%s" % (stem, size["players"], size["rows"], ext)
-
-    c = canvas.Canvas(out, pagesize=PAGESIZE)
-    c.setTitle(TITLE)
-    page1(c, size["players"], size["rows"], size["notes_w"])
-    if INCLUDE_INSTRUCTIONS and not a.sheet_only:
-        c.showPage(); page2(c)
-    c.save()
-    print("wrote", out)
+    if not a.guide_only:
+        out = a.out
+        if not out:                          # the standard sheet keeps the plain name
+            stem, ext = os.path.splitext(OUTFILE)
+            standard = size == PRESETS[DEFAULT_PRESET]
+            out = OUTFILE if standard else "%s_%dx%d%s" % (stem, size["players"], size["rows"], ext)
+        write_sheet(out, size["players"], size["rows"], size["notes_w"])
+        print("wrote", out)
+    if not a.sheet_only:
+        write_guide(a.guide_out or GUIDE_FILE)
+        print("wrote", a.guide_out or GUIDE_FILE)
 
 
 if __name__ == "__main__":
