@@ -364,7 +364,7 @@ def page2(c):
     story = [
         Paragraph("Using the chouette score sheet", STYLE_TITLE),
         Hh("Starting"),
-        P("Write the per-point stake at the top and tick the options in effect. The Jacoby rule "
+        P("Write the per-point stake at the top. The Jacoby rule "
           "applies unless waived. Write each player's name at the head of a column, in any order; column order "
           "has nothing to do with rotation order.  See the separate Chouette Rules for how to set up and maintain "
           "the rotation during the chouette. "
