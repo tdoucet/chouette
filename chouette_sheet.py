@@ -243,6 +243,7 @@ class ExampleTable(Flowable):
 # ---------------------------------------------------------------------------
 BASIC_EXAMPLE = dict(
     names=["Anne", "Bob", "Caleb", "Daria"],
+    side_note="Rotation in effect at start of period.  Leftmost is box.",
     rows=[
         dict(cells=[("+4", "4"), ("-2", "-2"), ("-1", "-1"), ("-1", "-1")],
              note="Start of chouette.", rotation="Anne / Bob / Caleb / Daria",
